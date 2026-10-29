@@ -1,1 +1,22 @@
-build failed before log
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/bc.c.lst src/bc.c -o obj/src/bc.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/main.c.lst src/main.c -o obj/src/main.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/audio.c.lst src/hal/audio.c -o obj/src/hal/audio.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/i2c.c.lst src/hal/i2c.c -o obj/src/hal/i2c.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/led.c.lst src/hal/led.c -o obj/src/hal/led.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/motor.c.lst src/hal/motor.c -o obj/src/hal/motor.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/rfid.c.lst src/hal/rfid.c -o obj/src/hal/rfid.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/spi.c.lst src/hal/spi.c -o obj/src/hal/spi.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/uart.c.lst src/hal/uart.c -o obj/src/hal/uart.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/net/aes.c.lst src/net/aes.c -o obj/src/net/aes.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/net/eapol.c.lst src/net/eapol.c -o obj/src/net/eapol.o  -lc_nano -lm
+src/net/eapol.c: In function 'eapol_mic':
+src/net/eapol.c:275:27: error: 'ptk' undeclared (first use in this function)
+  275 |                 hmac_sha1(ptk, EAPOL_MICK_LENGTH, data, len, mic);
+      |                           ^~~
+src/net/eapol.c:275:27: note: each undeclared identifier is reported only once for each function it appears in
+src/net/eapol.c: In function 'wpa2_process_key_data':
+src/net/eapol.c:310:32: error: 'gtk' undeclared (first use in this function)
+  310 |                         memcpy(gtk, &kd[pos+8], copied);
+      |                                ^~~
+make: *** [Makefile:73: obj/src/net/eapol.o] Error 1
+rm obj/src/bc.o obj/src/hal/led.o obj/src/net/aes.o obj/src/main.o obj/src/hal/uart.o obj/src/hal/rfid.o obj/src/hal/i2c.o obj/src/hal/audio.o obj/src/hal/spi.o obj/src/hal/motor.o
