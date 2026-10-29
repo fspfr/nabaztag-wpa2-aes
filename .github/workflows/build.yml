@@ -21,6 +21,9 @@ jobs:
       - name: Get nabgcc sources
         run: git clone --depth 1 https://github.com/RedoXyde/nabgcc.git nabgcc
 
+      - name: Get packaging template (testwpa.sim)
+        run: git clone --depth 1 https://github.com/RedoXyde/firmware_nabaztag.git fwrepo
+
       - name: Apply overlay (corrected source files)
         run: |
           if [ -d overlay ] && [ -n "$(ls -A overlay 2>/dev/null)" ]; then
@@ -33,7 +36,6 @@ jobs:
         run: |
           printf 'typedef unsigned char uchar;\ntypedef unsigned short ushort;\ntypedef unsigned int uint;\ntypedef unsigned long ulong;\n' >> nabgcc/sys/inc/common.h
           cp files/syscalls.c nabgcc/src/utils/syscalls.c
-          tail -6 nabgcc/sys/inc/common.h
 
       - name: Install ARM toolchain
         run: |
@@ -44,14 +46,23 @@ jobs:
         run: |
           cd nabgcc
           (make 2>&1 || true) | tee build.log
+          ls -la bin/ || true
+
+      - name: Package flashable .sim.txt
+        run: |
+          mkdir -p out
+          if [ -f nabgcc/bin/Nab.bin ]; then
+            python3 files/pack_sim.py fwrepo/fw_wpa_wpa2_src/testwpa.sim nabgcc/bin/Nab.bin out/firmware-42.sim out/firmware-42.sim.txt
+          else
+            echo 'Nab.bin missing - packaging skipped' | tee out/packaging-skipped.txt
+          fi
 
       - name: Collect outputs
         if: always()
         run: |
-          mkdir -p out
           cp nabgcc/build.log out/ 2>/dev/null || true
-          find nabgcc/bin -type f -exec cp {} out/ \; 2>/dev/null || true
           cp nabgcc/obj/Nab.map out/ 2>/dev/null || true
+          head -c 2000 out/firmware-42.sim.txt > out/firmware-head.txt 2>/dev/null || true
 
       - name: Upload artifacts
         if: always()
