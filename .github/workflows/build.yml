@@ -40,6 +40,9 @@ jobs:
           sed -i 's/\r$//' nabgcc/inc/net/ieee80211.h nabgcc/inc/net/eapol.h nabgcc/src/net/ieee80211.c nabgcc/src/net/eapol.c
           patch -d nabgcc -p1 < patches/wpa2.patch
 
+      - name: Swap in WPA-WPA2 config bytecode (RedoX 12wpa)
+        run: python3 files/extract_bc.py fwrepo/fw_wpa_wpa2_src/bc.c nabgcc/src/bc.c
+
       - name: GCC fixes (IAR compat types + newlib stubs)
         run: |
           printf 'typedef unsigned char uchar;\ntypedef unsigned short ushort;\ntypedef unsigned int uint;\ntypedef unsigned long ulong;\n' >> nabgcc/sys/inc/common.h
