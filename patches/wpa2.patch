@@ -102,7 +102,7 @@
  
  /**
   * @brief Fill a buffer with random data
-@@ -241,6 +243,94 @@
+@@ -241,6 +243,26 @@
  	0x50, 0xf2, 0x02
  };
  
@@ -126,6 +126,13 @@
 +	return (ieee80211_encryption == IEEE80211_CRYPT_WPA2_AES);
 +}
 +
+ eapol_state_t eapol_state;
+ static uint8_t pmk[EAPOL_MASTER_KEY_LENGTH];
+ static uint8_t replay_active;
+@@ -251,6 +273,75 @@
+ static uint8_t gtk[EAPOL_MICK_LENGTH+EAPOL_EK_LENGTH];
+ uint8_t ptk_tsc[EAPOL_TSC_LENGTH];
+ 
 +/*
 + * Compute/verify the EAPOL key MIC for the current mode.
 + * WPA1: HMAC-MD5 with the KCK (first 16 bytes of PTK).
@@ -194,10 +201,11 @@
 +	return 0;
 +}
 +
- eapol_state_t eapol_state;
- static uint8_t pmk[EAPOL_MASTER_KEY_LENGTH];
- static uint8_t replay_active;
-@@ -288,9 +378,13 @@
++
+ /**
+  * @brief Init EAPOL
+  */
+@@ -288,9 +379,13 @@
  	struct eapol_frame *fr_in = (struct eapol_frame *)frame;
  	struct {
  		struct eapol_frame llc_eapol;
@@ -212,7 +220,7 @@
  
  	DBG_WIFI("Received EAPOL message 1/4"EOL);
  
-@@ -307,17 +401,18 @@
+@@ -307,17 +402,18 @@
  	/* Generate SNonce */
  	randbuffer(snonce, EAPOL_NONCE_LENGTH);
  
@@ -235,7 +243,7 @@
  		sprintf(dbg_buffer, "%02x", ptk[i]);
  		DBG_WIFI(dbg_buffer);
  	}
-@@ -328,16 +423,25 @@
+@@ -328,16 +424,25 @@
  	memcpy(fr_out.llc_eapol.llc, eapol_llc, LLC_LENGTH);
  	fr_out.llc_eapol.protocol_version = EAPOL_VERSION;
  	fr_out.llc_eapol.packet_type = EAPOL_TYPE_KEY;
@@ -265,7 +273,7 @@
  	fr_out.llc_eapol.key_frame.key_info.key_type = 1;
  	fr_out.llc_eapol.key_frame.key_info.key_index = 0;
  	fr_out.llc_eapol.key_frame.key_info.install = 0;
-@@ -356,16 +460,15 @@
+@@ -356,16 +461,15 @@
  	memset(fr_out.llc_eapol.key_frame.key_rsc, 0, EAPOL_KEYRSC_LENGTH);
  	memcpy(fr_out.llc_eapol.key_frame.key_id,
                     fr_in->key_frame.key_id, EAPOL_KEYID_LENGTH);
@@ -288,7 +296,7 @@
  
  	DBG_WIFI("Response computed"EOL);
  
-@@ -375,7 +478,11 @@
+@@ -375,7 +479,11 @@
  	DBG_WIFI("Response sent"EOL);
  
  	/* Install pairwise encryption and MIC keys */
@@ -301,7 +309,7 @@
  	memset(ptk_tsc, 0, EAPOL_TSC_LENGTH);
  
  	eapol_state = EAPOL_S_MSG3;
-@@ -414,16 +521,31 @@
+@@ -414,16 +522,31 @@
  	/* Check MIC */
  	memcpy(old_mic, fr_in->key_frame.key_mic, EAPOL_KEYMIC_LENGTH);
  	memset(fr_in->key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
@@ -337,7 +345,7 @@
  	/* Make response frame */
  	memcpy(fr_out.llc_eapol.llc, eapol_llc, LLC_LENGTH);
  	fr_out.llc_eapol.protocol_version = EAPOL_VERSION;
-@@ -431,15 +553,18 @@
+@@ -431,15 +554,18 @@
  	fr_out.llc_eapol.body_length[0] = (sizeof(struct eapol_key_frame)&0xff00)>> 8;
  	fr_out.llc_eapol.body_length[1] = (sizeof(struct eapol_key_frame)&0x00ff);
  
@@ -359,7 +367,7 @@
  	fr_out.llc_eapol.key_frame.key_info.error = 0;
  	fr_out.llc_eapol.key_frame.key_info.request = 0;
  	fr_out.llc_eapol.key_frame.key_info.ekd = 0;
-@@ -456,9 +581,9 @@
+@@ -456,9 +582,9 @@
  
  	/* Compute MIC */
  	memset(fr_out.llc_eapol.key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
@@ -372,7 +380,7 @@
  
  	DBG_WIFI("Response computed"EOL);
  
-@@ -497,9 +622,9 @@
+@@ -497,9 +623,9 @@
  	/* Check MIC */
  	memcpy(old_mic, fr_in->key_frame.key_mic, EAPOL_KEYMIC_LENGTH);
  	memset(fr_in->key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
@@ -385,7 +393,7 @@
  	if(memcmp(fr_in->key_frame.key_mic, old_mic, EAPOL_KEYMIC_LENGTH) != 0)
      return;
  	DBG_WIFI("MIC OK"EOL);
-@@ -511,9 +636,11 @@
+@@ -511,9 +637,11 @@
  	fr_out.body_length[0] = (sizeof(struct eapol_key_frame) & 0xff00) >> 8;
  	fr_out.body_length[1] = (sizeof(struct eapol_key_frame) & 0x00ff);
  
@@ -399,7 +407,7 @@
  	fr_out.key_frame.key_info.key_type = 0;
  	fr_out.key_frame.key_info.key_index = fr_in->key_frame.key_info.key_index;
  	fr_out.key_frame.key_info.install = 0;
-@@ -535,8 +662,8 @@
+@@ -535,8 +663,8 @@
  
  	/* Compute MIC */
  	memset(fr_out.key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
@@ -410,7 +418,7 @@
  		 fr_out.key_frame.key_mic);
  
  	DBG_WIFI("Response computed"EOL);
-@@ -548,13 +675,28 @@
+@@ -548,13 +676,28 @@
  	DBG_WIFI("Response sent"EOL);
  
  	/* Decipher and install GTK */
@@ -446,7 +454,7 @@
    #ifdef DEBUG_WIFI
  	DBG_WIFI("GTK is ");
  	for(i=0;i<EAPOL_MICK_LENGTH+EAPOL_EK_LENGTH;i++) {
-@@ -563,9 +705,6 @@
+@@ -563,9 +706,6 @@
  	}
  	DBG_WIFI(EOL);
    #endif
@@ -456,7 +464,7 @@
  	eapol_state = EAPOL_S_RUN;
  	ieee80211_state = IEEE80211_S_RUN;
  	ieee80211_timeout = IEEE80211_RUN_TIMEOUT;
-@@ -593,11 +732,14 @@
+@@ -593,11 +733,14 @@
     * other errors
     */
  
