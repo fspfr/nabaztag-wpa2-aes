@@ -1,0 +1,50 @@
+name: Build firmware
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo (patches / overlay)
+        uses: actions/checkout@v4
+
+      - name: Get nabgcc sources
+        run: git clone --depth 1 https://github.com/RedoXyde/nabgcc.git nabgcc
+
+      - name: Apply overlay (corrected source files)
+        run: |
+          if [ -d overlay ] && [ -n "$(ls -A overlay)" ]; then
+            cp -rv overlay/* nabgcc/
+          else
+            echo "no overlay yet - vanilla build"
+          fi
+
+      - name: Install ARM toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gcc-arm-none-eabi
+
+      - name: Build
+        run: |
+          cd nabgcc
+          make 2>&1 | tee build.log
+          echo "exit: $?"
+          ls -la obj/ || true
+
+      - name: Collect outputs
+        if: always()
+        run: |
+          mkdir -p out
+          cp nabgcc/build.log out/ 2>/dev/null || true
+          find nabgcc/obj -type f -exec cp {} out/ ; 2>/dev/null || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-build
+          path: out/
+          if-no-files-found: warn
