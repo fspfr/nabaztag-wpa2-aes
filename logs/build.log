@@ -1,0 +1,16 @@
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/bc.c.lst src/bc.c -o obj/src/bc.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/main.c.lst src/main.c -o obj/src/main.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/audio.c.lst src/hal/audio.c -o obj/src/hal/audio.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/i2c.c.lst src/hal/i2c.c -o obj/src/hal/i2c.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/led.c.lst src/hal/led.c -o obj/src/hal/led.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/motor.c.lst src/hal/motor.c -o obj/src/hal/motor.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/rfid.c.lst src/hal/rfid.c -o obj/src/hal/rfid.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/spi.c.lst src/hal/spi.c -o obj/src/hal/spi.o  -lc_nano -lm
+arm-none-eabi-gcc -c -O1 -g -mthumb -mthumb-interwork -Wall -Wextra -Wno-unused-parameter -Wpointer-arith -fdata-sections -ffunction-sections -fno-exceptions -fno-delete-null-pointer-checks -mcpu=arm7tdmi -MMD  -Iinc/ -Isys/inc -Wa,-adhln=obj/lst/src/hal/uart.c.lst src/hal/uart.c -o obj/src/hal/uart.o  -lc_nano -lm
+src/hal/uart.c: In function 'xmodem_send':
+src/hal/uart.c:158:3: error: unknown type name 'ushort'; did you mean 'short'?
+  158 |   ushort crc;
+      |   ^~~~~~
+      |   short
+make: *** [Makefile:73: obj/src/hal/uart.o] Error 1
+rm obj/src/bc.o obj/src/hal/led.o obj/src/main.o obj/src/hal/rfid.o obj/src/hal/i2c.o obj/src/hal/audio.o obj/src/hal/spi.o obj/src/hal/motor.o
