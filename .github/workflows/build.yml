@@ -29,6 +29,17 @@ jobs:
             echo "no overlay - vanilla build"
           fi
 
+      - name: GCC fixes (IAR compat types)
+        run: |
+          cat >> nabgcc/sys/inc/common.h <<'EOF'
+          /* IAR compatibility typedefs (added by CI) */
+          typedef unsigned char uchar;
+          typedef unsigned short ushort;
+          typedef unsigned int uint;
+          typedef unsigned long ulong;
+          EOF
+          tail -8 nabgcc/sys/inc/common.h
+
       - name: Install ARM toolchain
         run: |
           sudo apt-get update -q
