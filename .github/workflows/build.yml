@@ -6,6 +6,7 @@ on:
       - ".github/workflows/build.yml"
       - "overlay/**"
       - "files/**"
+      - "patches/**"
   workflow_dispatch:
 
 permissions:
@@ -31,6 +32,13 @@ jobs:
           else
             echo "no overlay - vanilla build"
           fi
+
+      - name: Apply WPA2-AES patch
+        run: |
+          cp files/aes.h nabgcc/inc/net/aes.h
+          cp files/aes.c nabgcc/src/net/aes.c
+          sed -i 's/\r$//' nabgcc/inc/net/ieee80211.h nabgcc/inc/net/eapol.h nabgcc/src/net/ieee80211.c nabgcc/src/net/eapol.c
+          patch -d nabgcc -p1 < patches/wpa2.patch
 
       - name: GCC fixes (IAR compat types + newlib stubs)
         run: |
