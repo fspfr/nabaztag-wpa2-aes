@@ -1,0 +1,475 @@
+--- a/inc/net/ieee80211.h
++++ b/inc/net/ieee80211.h
+@@ -325,6 +325,7 @@
+ 	IEEE80211_CRYPT_WEP128,
+ 	IEEE80211_CRYPT_WPA,
+ 	IEEE80211_CRYPT_WPA_UNSUPPORTED,
++	IEEE80211_CRYPT_WPA2_AES = 5,	/* RSN, pairwise CCMP (bootcode 'WPA-WPA2' option) */
+ };
+ 
+ enum {
+--- a/inc/net/eapol.h
++++ b/inc/net/eapol.h
+@@ -17,6 +17,7 @@
+ 
+ 
+ #define EAPOL_DTYPE_WPAKEY        0xFE
++#define EAPOL_DTYPE_RSNKEY        0x02	/* 802.11i RSN key descriptor */
+ 
+ struct eapol_key_info {
+  uint8_t key_mic:1;
+@@ -82,6 +83,7 @@
+                                     EAPOL_TKIP_RXMICK_LENGTH + \
+                                     EAPOL_TKIP_TXMICK_LENGTH)
+ 
++#define EAPOL_PTK_LENGTH_CCMP     48	/* KCK 16 / KEK 16 / TK 16 */
+ #define EAPOL_MASTER_KEY_LENGTH   32
+ #define EAPOL_TSC_LENGTH          6
+ 
+--- a/src/net/ieee80211.c
++++ b/src/net/ieee80211.c
+@@ -42,6 +42,12 @@
+ static const uint8_t ieee80211_psk_oui[IEEE80211_OUI_LEN] =
+ { 0x00, 0x50, 0xf2, 0x02 };
+ 
++/* RSN (802.11i) suites - OUI type 00:0F:AC */
++static const uint8_t ieee80211_rsn_tkip_oui[IEEE80211_OUI_LEN] =
++{ 0x00, 0x0f, 0xac, 0x02 };
++static const uint8_t ieee80211_rsn_ccmp_oui[IEEE80211_OUI_LEN] =
++{ 0x00, 0x0f, 0xac, 0x04 };
++
+ int32_t ieee80211_mode;
+ int32_t ieee80211_state;
+ uint32_t ieee80211_timeout;
+@@ -204,6 +210,8 @@
+ 			return RT2501_CIPHER_WEP128;
+ 		case IEEE80211_CRYPT_WPA:
+ 			return RT2501_CIPHER_TKIP;
++		case IEEE80211_CRYPT_WPA2_AES:
++			return RT2501_CIPHER_AES;
+ 		default:
+ 			return RT2501_CIPHER_NONE;
+ 	}
+@@ -666,6 +674,27 @@
+ 			*(write_ptr++) = ieee80211_psk_oui[i];
+ 	}
+ 
++	if(ieee80211_encryption == IEEE80211_CRYPT_WPA2_AES) {
++		/* RSN IE (element 48) - version 1, group TKIP (mixed APs),
++		 * 1 pairwise CCMP, 1 AKM PSK, capabilities 0 */
++		*(write_ptr++) = IEEE80211_ELEMID_RSN;
++		*(write_ptr++) = 20;
++		*(write_ptr++) = 0x01;		/* version 1 */
++		*(write_ptr++) = 0x00;
++		for(i=0;i<IEEE80211_OUI_LEN;i++)		/* group: TKIP */
++			*(write_ptr++) = ieee80211_rsn_tkip_oui[i];
++		*(write_ptr++) = 0x01;		/* 1 pairwise suite */
++		*(write_ptr++) = 0x00;
++		for(i=0;i<IEEE80211_OUI_LEN;i++)		/* pairwise: CCMP */
++			*(write_ptr++) = ieee80211_rsn_ccmp_oui[i];
++		*(write_ptr++) = 0x01;		/* 1 AKM suite */
++		*(write_ptr++) = 0x00;
++		for(i=0;i<IEEE80211_OUI_LEN;i++)		/* AKM: PSK */
++			*(write_ptr++) = ieee80211_rsn_tkip_oui[i];
++		*(write_ptr++) = 0x00;		/* RSN capabilities */
++		*(write_ptr++) = 0x00;
++	}
++
+ 	frame_length = sizeof(struct ieee80211_frame)+(write_ptr - assoc->assoc);
+ 
+ 	duration = rt2501_txtime(frame_length, ieee80211_mask_to_rate(ieee80211_lowest_txrate))+IEEE80211_SIFS;
+@@ -1704,6 +1733,12 @@
+ 			ieee80211_authmode = IEEE80211_AUTH_OPEN;
+ 			strcpy((char *)ieee80211_key, (const char *)key);
+ 			rt2501_set_key(0, NULL, NULL, NULL, RT2501_CIPHER_NONE);
++			eapol_init();
++			break;
++		case IEEE80211_CRYPT_WPA2_AES:
++			ieee80211_authmode = IEEE80211_AUTH_OPEN;
++			strcpy((char *)ieee80211_key, (const char *)key);
++			rt2501_set_key(0, NULL, NULL, NULL, RT2501_CIPHER_NONE);
+ 			eapol_init();
+ 			break;
+ 		default:
+--- a/src/net/eapol.c
++++ b/src/net/eapol.c
+@@ -22,6 +22,8 @@
+ #include "net/eapol.h"
+ #include "net/hash.h"
+ #include "net/rc4.h"
++#include "net/aes.h"
++#include "net/ieee80211.h"
+ 
+ /**
+  * @brief Fill a buffer with random data
+@@ -241,6 +243,94 @@
+ 	0x50, 0xf2, 0x02
+ };
+ 
++/*
++ * RSN information element sent in EAPOL M2 key data when doing WPA2:
++ * ID 0x30, len 20, version 1, group cipher TKIP (00:0F:AC:02),
++ * 1 pairwise cipher CCMP (00:0F:AC:04), 1 AKM PSK (00:0F:AC:02),
++ * capabilities 0x0000.
++ */
++static const uint8_t rsn_ie[] = {
++	0x30, 0x14,
++	0x01, 0x00,
++	0x00, 0x0f, 0xac, 0x02,
++	0x01, 0x00, 0x00, 0x0f, 0xac, 0x04,
++	0x01, 0x00, 0x00, 0x0f, 0xac, 0x02,
++	0x00, 0x00
++};
++
++static uint8_t wpa2_active(void)
++{
++	return (ieee80211_encryption == IEEE80211_CRYPT_WPA2_AES);
++}
++
++/*
++ * Compute/verify the EAPOL key MIC for the current mode.
++ * WPA1: HMAC-MD5 with the KCK (first 16 bytes of PTK).
++ * WPA2: HMAC-SHA1 with the KCK, truncated to 16 bytes.
++ */
++static void eapol_mic(const uint8_t *data, uint32_t len, uint8_t *mic16)
++{
++	if(wpa2_active()) {
++		uint8_t mic[20];
++		hmac_sha1(ptk, EAPOL_MICK_LENGTH, data, len, mic);
++		memcpy(mic16, mic, EAPOL_KEYMIC_LENGTH);
++	} else {
++		hmac_md5(ptk, EAPOL_MICK_LENGTH, data, len, mic16);
++	}
++}
++
++/*
++ * Parse decrypted WPA2 key data and install the GTK.
++ * Returns 0 on success.
++ * Handles: GTK KDE (id 221, OUI 00:0F:AC, type 1), and detects the
++ * group cipher from an RSNE (id 48) if present (default TKIP).
++ */
++static int wpa2_process_key_data(uint8_t *kd, uint16_t kd_len, uint8_t keyidx)
++{
++	uint16_t pos = 0;
++	int have_gtk = 0;
++	uint8_t group_ccmp = 0;
++
++	while((pos + 2) <= kd_len) {
++		uint8_t id = kd[pos];
++		uint8_t len = kd[pos+1];
++		if(pos + 2 + (uint16_t)len > kd_len)
++			break;
++		if(id == 48 && len >= 4) {
++			/* RSNE: version(2) then group cipher OUI+type */
++			if(kd[pos+6] == 0x04)
++				group_ccmp = 1;
++		} else if(id == 221 && len >= 8 &&
++			   kd[pos+2] == 0x00 && kd[pos+3] == 0x0f &&
++			   kd[pos+4] == 0xac && kd[pos+5] == 0x01) {
++			/* GTK KDE: 2-byte key info then GTK (maybe 2-byte pad) */
++			uint8_t copied = len - 6;
++			if(copied > EAPOL_MICK_LENGTH+EAPOL_EK_LENGTH)
++				copied = EAPOL_MICK_LENGTH+EAPOL_EK_LENGTH;
++			memcpy(gtk, &kd[pos+8], copied);
++			if(!(kd[pos+6] & 0x08)) {
++				/* RSC bit not set: last 2 bytes are padding */
++				if(copied > 32) copied = 32;
++				else if(copied > 16) copied = 16;
++			}
++			have_gtk = 1;
++			keyidx = kd[pos+6] & 0x03;
++		}
++		pos += 2 + len;
++	}
++
++	if(!have_gtk)
++		return -1;
++
++	DBG_WIFI("Installing group key" EOL);
++	if(group_ccmp)
++		rt2501_set_key(keyidx, &gtk[0], NULL, NULL, RT2501_CIPHER_AES);
++	else
++		rt2501_set_key(keyidx, &gtk[0], &gtk[16+8], &gtk[16],
++		               RT2501_CIPHER_TKIP);
++	return 0;
++}
++
+ eapol_state_t eapol_state;
+ static uint8_t pmk[EAPOL_MASTER_KEY_LENGTH];
+ static uint8_t replay_active;
+@@ -288,9 +378,13 @@
+ 	struct eapol_frame *fr_in = (struct eapol_frame *)frame;
+ 	struct {
+ 		struct eapol_frame llc_eapol;
+-		uint8_t rsn[sizeof(wpa_rsn)];
++		uint8_t rsn[sizeof(wpa_rsn) > sizeof(rsn_ie) ?
++		            sizeof(wpa_rsn) : sizeof(rsn_ie)];
+ 	} fr_out;
++	const uint8_t *kd;
++	uint16_t kd_len;
+ 	uint8_t ptk_buffer[80];
++	uint8_t ptk_len;
+ 
+ 	DBG_WIFI("Received EAPOL message 1/4"EOL);
+ 
+@@ -307,17 +401,18 @@
+ 	/* Generate SNonce */
+ 	randbuffer(snonce, EAPOL_NONCE_LENGTH);
+ 
+-	/* Derive PTK */
++	/* Derive PTK (48 bytes for CCMP pairwise, 64 for TKIP) */
++	ptk_len = wpa2_active() ? EAPOL_PTK_LENGTH_CCMP : EAPOL_PTK_LENGTH;
+ 	compute_ptk(pmk,
+               anonce, ieee80211_assoc_mac,
+               snonce, rt2501_mac,
+-              ptk_buffer, EAPOL_PTK_LENGTH);
+-	memcpy(ptk, ptk_buffer, EAPOL_PTK_LENGTH);
++              ptk_buffer, ptk_len);
++	memcpy(ptk, ptk_buffer, ptk_len);
+ 
+ #ifdef DEBUG_WIFI
+ 	DBG_WIFI("PTK computed, ");
+   uint16_t i;
+-	for(i=0;i<EAPOL_PTK_LENGTH;i++) {
++	for(i=0;i<ptk_len;i++) {
+ 		sprintf(dbg_buffer, "%02x", ptk[i]);
+ 		DBG_WIFI(dbg_buffer);
+ 	}
+@@ -328,16 +423,25 @@
+ 	memcpy(fr_out.llc_eapol.llc, eapol_llc, LLC_LENGTH);
+ 	fr_out.llc_eapol.protocol_version = EAPOL_VERSION;
+ 	fr_out.llc_eapol.packet_type = EAPOL_TYPE_KEY;
++	if(wpa2_active()) {
++		kd = rsn_ie;
++		kd_len = sizeof(rsn_ie);
++	} else {
++		kd = wpa_rsn;
++		kd_len = sizeof(wpa_rsn);
++	}
+ 	fr_out.llc_eapol.body_length[0] = ((sizeof(struct eapol_key_frame)+
+-                                      sizeof(wpa_rsn)
++                                      kd_len
+                                      ) & 0xff00) >> 8;
+ 	fr_out.llc_eapol.body_length[1] = ((sizeof(struct eapol_key_frame)+
+-                                      sizeof(wpa_rsn)
++                                      kd_len
+                                      ) & 0x00ff);
+ 
+-	fr_out.llc_eapol.key_frame.descriptor_type = EAPOL_DTYPE_WPAKEY;
++	fr_out.llc_eapol.key_frame.descriptor_type =
++		wpa2_active() ? EAPOL_DTYPE_RSNKEY : EAPOL_DTYPE_WPAKEY;
+ 	fr_out.llc_eapol.key_frame.key_info.reserved = 0;
+-	fr_out.llc_eapol.key_frame.key_info.key_desc_ver = 1;
++	fr_out.llc_eapol.key_frame.key_info.key_desc_ver =
++		wpa2_active() ? 2 : 1;
+ 	fr_out.llc_eapol.key_frame.key_info.key_type = 1;
+ 	fr_out.llc_eapol.key_frame.key_info.key_index = 0;
+ 	fr_out.llc_eapol.key_frame.key_info.install = 0;
+@@ -356,16 +460,15 @@
+ 	memset(fr_out.llc_eapol.key_frame.key_rsc, 0, EAPOL_KEYRSC_LENGTH);
+ 	memcpy(fr_out.llc_eapol.key_frame.key_id,
+                    fr_in->key_frame.key_id, EAPOL_KEYID_LENGTH);
+-	fr_out.llc_eapol.key_frame.key_data_length[0] = (sizeof(wpa_rsn)&0xff00) >> 8;
+-	fr_out.llc_eapol.key_frame.key_data_length[1] = (sizeof(wpa_rsn)&0x00ff);
+-	memcpy(fr_out.llc_eapol.key_frame.key_data, wpa_rsn, sizeof(wpa_rsn));
++	fr_out.llc_eapol.key_frame.key_data_length[0] = (kd_len & 0xff00) >> 8;
++	fr_out.llc_eapol.key_frame.key_data_length[1] = (kd_len & 0x00ff);
++	memcpy(fr_out.llc_eapol.key_frame.key_data, kd, kd_len);
+ 
+ 	/* Compute MIC */
+ 	memset(fr_out.llc_eapol.key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
+-	hmac_md5(ptk, EAPOL_MICK_LENGTH,
+-		 (uint8_t *)&fr_out+LLC_LENGTH, sizeof(struct eapol_frame)+
+-                                    sizeof(wpa_rsn)-LLC_LENGTH,
+-		 fr_out.llc_eapol.key_frame.key_mic);
++	eapol_mic((uint8_t *)&fr_out+LLC_LENGTH,
++	          sizeof(struct eapol_frame)+kd_len-LLC_LENGTH,
++	          fr_out.llc_eapol.key_frame.key_mic);
+ 
+ 	DBG_WIFI("Response computed"EOL);
+ 
+@@ -375,7 +478,11 @@
+ 	DBG_WIFI("Response sent"EOL);
+ 
+ 	/* Install pairwise encryption and MIC keys */
+-	rt2501_set_key(0, &ptk[32], &ptk[32+16+8], &ptk[32+16], RT2501_CIPHER_TKIP);
++	if(wpa2_active())
++		rt2501_set_key(0, &ptk[32], NULL, NULL, RT2501_CIPHER_AES);
++	else
++		rt2501_set_key(0, &ptk[32], &ptk[32+16+8], &ptk[32+16],
++		               RT2501_CIPHER_TKIP);
+ 	memset(ptk_tsc, 0, EAPOL_TSC_LENGTH);
+ 
+ 	eapol_state = EAPOL_S_MSG3;
+@@ -414,16 +521,31 @@
+ 	/* Check MIC */
+ 	memcpy(old_mic, fr_in->key_frame.key_mic, EAPOL_KEYMIC_LENGTH);
+ 	memset(fr_in->key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
+-	hmac_md5(ptk, EAPOL_MICK_LENGTH,
+-		 frame+LLC_LENGTH,
+-		 ((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4,
+-		 fr_in->key_frame.key_mic);
++	eapol_mic(frame+LLC_LENGTH,
++	          ((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4,
++	          fr_in->key_frame.key_mic);
+ 	if(memcmp(fr_in->key_frame.key_mic, old_mic, EAPOL_KEYMIC_LENGTH) != 0)
+     return;
+ 	DBG_WIFI("MIC OK"EOL);
+ 
+ 	eapol_state = EAPOL_S_MSG3;
+ 
++	/* WPA2: the GTK usually comes in message 3, AES key-wrapped */
++	if(wpa2_active()) {
++		uint8_t kdbuf[EAPOL_MICK_LENGTH+EAPOL_EK_LENGTH+16];
++		uint16_t kdl =
++			((fr_in->key_frame.key_data_length[0] << 8) |
++			 fr_in->key_frame.key_data_length[1]);
++		if(kdl >= 16 && kdl <= sizeof(kdbuf) &&
++		   aes_kw_unwrap(&ptk[EAPOL_MICK_LENGTH],
++		                 fr_in->key_frame.key_data, kdl, kdbuf) > 0) {
++			if(wpa2_process_key_data(kdbuf, kdl-8, 0) == 0) {
++				ieee80211_state = IEEE80211_S_RUN;
++				ieee80211_timeout = IEEE80211_RUN_TIMEOUT;
++			}
++		}
++	}
++
+ 	/* Make response frame */
+ 	memcpy(fr_out.llc_eapol.llc, eapol_llc, LLC_LENGTH);
+ 	fr_out.llc_eapol.protocol_version = EAPOL_VERSION;
+@@ -431,15 +553,18 @@
+ 	fr_out.llc_eapol.body_length[0] = (sizeof(struct eapol_key_frame)&0xff00)>> 8;
+ 	fr_out.llc_eapol.body_length[1] = (sizeof(struct eapol_key_frame)&0x00ff);
+ 
+-	fr_out.llc_eapol.key_frame.descriptor_type = EAPOL_DTYPE_WPAKEY;
++	fr_out.llc_eapol.key_frame.descriptor_type =
++		wpa2_active() ? EAPOL_DTYPE_RSNKEY : EAPOL_DTYPE_WPAKEY;
+ 	fr_out.llc_eapol.key_frame.key_info.reserved = 0;
+-	fr_out.llc_eapol.key_frame.key_info.key_desc_ver = 1;
++	fr_out.llc_eapol.key_frame.key_info.key_desc_ver =
++		wpa2_active() ? 2 : 1;
+ 	fr_out.llc_eapol.key_frame.key_info.key_type = 1;
+ 	fr_out.llc_eapol.key_frame.key_info.key_index = 0;
+ 	fr_out.llc_eapol.key_frame.key_info.install = 0;
+ 	fr_out.llc_eapol.key_frame.key_info.key_ack = 0;
+ 	fr_out.llc_eapol.key_frame.key_info.key_mic = 1;
+-	fr_out.llc_eapol.key_frame.key_info.secure = 0;
++	fr_out.llc_eapol.key_frame.key_info.secure =
++		wpa2_active() ? 1 : 0;
+ 	fr_out.llc_eapol.key_frame.key_info.error = 0;
+ 	fr_out.llc_eapol.key_frame.key_info.request = 0;
+ 	fr_out.llc_eapol.key_frame.key_info.ekd = 0;
+@@ -456,9 +581,9 @@
+ 
+ 	/* Compute MIC */
+ 	memset(fr_out.llc_eapol.key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
+-	hmac_md5(ptk, EAPOL_MICK_LENGTH,
+-		 (uint8_t *)&fr_out+LLC_LENGTH, sizeof(struct eapol_frame)-LLC_LENGTH,
+-		 fr_out.llc_eapol.key_frame.key_mic);
++	eapol_mic((uint8_t *)&fr_out+LLC_LENGTH,
++	          sizeof(struct eapol_frame)-LLC_LENGTH,
++	          fr_out.llc_eapol.key_frame.key_mic);
+ 
+ 	DBG_WIFI("Response computed"EOL);
+ 
+@@ -497,9 +622,9 @@
+ 	/* Check MIC */
+ 	memcpy(old_mic, fr_in->key_frame.key_mic, EAPOL_KEYMIC_LENGTH);
+ 	memset(fr_in->key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
+-	hmac_md5(ptk, EAPOL_MICK_LENGTH, frame+LLC_LENGTH,
+-		 ((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4,
+-		 fr_in->key_frame.key_mic);
++	eapol_mic(frame+LLC_LENGTH,
++	          ((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4,
++	          fr_in->key_frame.key_mic);
+ 	if(memcmp(fr_in->key_frame.key_mic, old_mic, EAPOL_KEYMIC_LENGTH) != 0)
+     return;
+ 	DBG_WIFI("MIC OK"EOL);
+@@ -511,9 +636,11 @@
+ 	fr_out.body_length[0] = (sizeof(struct eapol_key_frame) & 0xff00) >> 8;
+ 	fr_out.body_length[1] = (sizeof(struct eapol_key_frame) & 0x00ff);
+ 
+-	fr_out.key_frame.descriptor_type = EAPOL_DTYPE_WPAKEY;
++	fr_out.key_frame.descriptor_type =
++		wpa2_active() ? EAPOL_DTYPE_RSNKEY : EAPOL_DTYPE_WPAKEY;
+ 	fr_out.key_frame.key_info.reserved = 0;
+-	fr_out.key_frame.key_info.key_desc_ver = 1;
++	fr_out.key_frame.key_info.key_desc_ver =
++		wpa2_active() ? 2 : 1;
+ 	fr_out.key_frame.key_info.key_type = 0;
+ 	fr_out.key_frame.key_info.key_index = fr_in->key_frame.key_info.key_index;
+ 	fr_out.key_frame.key_info.install = 0;
+@@ -535,8 +662,8 @@
+ 
+ 	/* Compute MIC */
+ 	memset(fr_out.key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
+-	hmac_md5(ptk, EAPOL_MICK_LENGTH,
+-		 (uint8_t *)&fr_out+LLC_LENGTH, sizeof(struct eapol_frame)-LLC_LENGTH,
++	eapol_mic((uint8_t *)&fr_out+LLC_LENGTH,
++	          sizeof(struct eapol_frame)-LLC_LENGTH,
+ 		 fr_out.key_frame.key_mic);
+ 
+ 	DBG_WIFI("Response computed"EOL);
+@@ -548,13 +675,28 @@
+ 	DBG_WIFI("Response sent"EOL);
+ 
+ 	/* Decipher and install GTK */
+-	memcpy(&key[0], fr_in->key_frame.key_iv, EAPOL_KEYIV_LENGTH);
+-	memcpy(&key[EAPOL_KEYIV_LENGTH], &ptk[EAPOL_MICK_LENGTH], 16);
+-	rc4_init(&rc4, key, 32);
+-	for(i=0;i<256;i++)
+-    rc4_byte(&rc4); /* discard first 256 bytes */
+-	rc4_cipher(&rc4, gtk, fr_in->key_frame.key_data,
+-                                             EAPOL_MICK_LENGTH+EAPOL_EK_LENGTH);
++	if(wpa2_active()) {
++		uint8_t kdbuf[EAPOL_MICK_LENGTH+EAPOL_EK_LENGTH+16];
++		uint16_t kdl =
++			((fr_in->key_frame.key_data_length[0] << 8) |
++			 fr_in->key_frame.key_data_length[1]);
++		if(kdl < 16 || kdl > sizeof(kdbuf) ||
++		   aes_kw_unwrap(&ptk[EAPOL_MICK_LENGTH],
++		                 fr_in->key_frame.key_data, kdl, kdbuf) <= 0 ||
++		   wpa2_process_key_data(kdbuf, kdl-8,
++		                          fr_in->key_frame.key_info.key_index) != 0)
++			return;
++	} else {
++		memcpy(&key[0], fr_in->key_frame.key_iv, EAPOL_KEYIV_LENGTH);
++		memcpy(&key[EAPOL_KEYIV_LENGTH], &ptk[EAPOL_MICK_LENGTH], 16);
++		rc4_init(&rc4, key, 32);
++		for(i=0;i<256;i++)
++			 rc4_byte(&rc4); /* discard first 256 bytes */
++		rc4_cipher(&rc4, gtk, fr_in->key_frame.key_data,
++								 EAPOL_MICK_LENGTH+EAPOL_EK_LENGTH);
++		rt2501_set_key(fr_in->key_frame.key_info.key_index,
++					 &gtk[0], &gtk[16+8], &gtk[16], RT2501_CIPHER_TKIP);
++	}
+   #ifdef DEBUG_WIFI
+ 	DBG_WIFI("GTK is ");
+ 	for(i=0;i<EAPOL_MICK_LENGTH+EAPOL_EK_LENGTH;i++) {
+@@ -563,9 +705,6 @@
+ 	}
+ 	DBG_WIFI(EOL);
+   #endif
+-	rt2501_set_key(fr_in->key_frame.key_info.key_index,
+-                             &gtk[0], &gtk[16+8], &gtk[16], RT2501_CIPHER_TKIP);
+-
+ 	eapol_state = EAPOL_S_RUN;
+ 	ieee80211_state = IEEE80211_S_RUN;
+ 	ieee80211_timeout = IEEE80211_RUN_TIMEOUT;
+@@ -593,11 +732,14 @@
+    * other errors
+    */
+ 
+-	if( ieee80211_encryption != IEEE80211_CRYPT_WPA ||
++	if( ((ieee80211_encryption != IEEE80211_CRYPT_WPA) &&
++	       (ieee80211_encryption != IEEE80211_CRYPT_WPA2_AES)) ||
+       length < sizeof(struct eapol_frame) ||
+       fr->protocol_version != EAPOL_VERSION ||
+       fr->packet_type != EAPOL_TYPE_KEY ||
+-      fr->key_frame.descriptor_type != EAPOL_DTYPE_WPAKEY)
++      ((fr->key_frame.descriptor_type != EAPOL_DTYPE_WPAKEY) &&
++       !(wpa2_active() &&
++         (fr->key_frame.descriptor_type == EAPOL_DTYPE_RSNKEY))))
+     return;
+ 
+ 
