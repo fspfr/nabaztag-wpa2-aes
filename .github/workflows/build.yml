@@ -5,7 +5,7 @@ on:
     paths:
       - ".github/workflows/build.yml"
       - "overlay/**"
-      - "patches/**"
+      - "files/**"
   workflow_dispatch:
 
 permissions:
@@ -31,25 +31,9 @@ jobs:
 
       - name: GCC fixes (IAR compat types + newlib stubs)
         run: |
-          cat >> nabgcc/sys/inc/common.h <<'EOF2'
-          typedef unsigned char uchar;
-          typedef unsigned short ushort;
-          typedef unsigned int uint;
-          typedef unsigned long ulong;
-          EOF2
-          cat > nabgcc/src/utils/syscalls.c <<'EOF2'
-#include <stdint.h>
-/* Minimal newlib syscall stubs for bare-metal ARM7 */
-int _read(int fd, char *buf, int len) { (void)fd; (void)buf; (void)len; return 0; }
-int _write(int fd, const char *buf, int len) { (void)fd; (void)buf; return len; }
-int _close(int fd) { (void)fd; return -1; }
-int _fstat(int fd, void *st) { (void)fd; (void)st; return 0; }
-int _isatty(int fd) { (void)fd; return 1; }
-int _lseek(int fd, int ptr, int dir) { (void)fd; (void)ptr; (void)dir; return 0; }
-int _kill(int pid, int sig) { (void)pid; (void)sig; return -1; }
-int _getpid(void) { return 1; }
-void _exit(int code) { (void)code; for(;;); }
-          EOF2
+          printf 'typedef unsigned char uchar;\ntypedef unsigned short ushort;\ntypedef unsigned int uint;\ntypedef unsigned long ulong;\n' >> nabgcc/sys/inc/common.h
+          cp files/syscalls.c nabgcc/src/utils/syscalls.c
+          tail -6 nabgcc/sys/inc/common.h
 
       - name: Install ARM toolchain
         run: |
@@ -66,8 +50,8 @@ void _exit(int code) { (void)code; for(;;); }
         run: |
           mkdir -p out
           cp nabgcc/build.log out/ 2>/dev/null || true
-          find nabgcc/obj -type f -name "*.elf" -exec cp {} out/ \; 2>/dev/null || true
           find nabgcc/bin -type f -exec cp {} out/ \; 2>/dev/null || true
+          cp nabgcc/obj/Nab.map out/ 2>/dev/null || true
 
       - name: Upload artifacts
         if: always()
