@@ -37,7 +37,7 @@ arm-none-eabi-gcc -o obj/sys/asm/swi_handler.o -O1 -g -mthumb -mthumb-interwork 
 arm-none-eabi-gcc -Wl,-Map,obj/Nab.map -nostartfiles -mcpu=arm7tdmi -Tsys/ml67q4051.ld -Wa,-adhln=obj/Nab.lst -o bin/Nab.elf obj/src/bc.o obj/src/main.o obj/src/hal/audio.o obj/src/hal/i2c.o obj/src/hal/led.o obj/src/hal/motor.o obj/src/hal/rfid.o obj/src/hal/spi.o obj/src/hal/uart.o obj/src/net/aes.o obj/src/net/eapol.o obj/src/net/hash.o obj/src/net/ieee80211.o obj/src/net/rc4.o obj/src/usb/hcd.o obj/src/usb/hcdmem.o obj/src/usb/list.o obj/src/usb/rt2501usb.o obj/src/usb/rt2501usb_buffer.o obj/src/usb/rt2501usb_io.o obj/src/usb/usbctrl.o obj/src/usb/usbhcore.o obj/src/utils/delay.o obj/src/utils/mem.o obj/src/utils/sys.o obj/src/utils/syscalls.o obj/src/vm/vaudio.o obj/src/vm/vinterp.o obj/src/vm/vloader.o obj/src/vm/vlog.o obj/src/vm/vmem.o obj/src/vm/vnet.o obj/sys/src/irq.o obj/sys/asm/init.o obj/sys/asm/reentrant_irq.o obj/sys/asm/swi_handler.o -lc_nano -lm
 arm-none-eabi-size bin/Nab.elf
    text	   data	    bss	    dec	    hex	filename
- 113408	      0	  12736	 126144	  1ecc0	bin/Nab.elf
+ 113611	      0	  12736	 126347	  1ed8b	bin/Nab.elf
 arm-none-eabi-objcopy -O ihex bin/Nab.elf bin/Nab.hex
 arm-none-eabi-objcopy -O binary bin/Nab.elf bin/Nab.bin
 arm-none-eabi-nm -lS bin/Nab.elf > obj/Nab.sym
