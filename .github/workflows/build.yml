@@ -2,13 +2,20 @@ name: Build firmware
 
 on:
   push:
+    paths:
+      - ".github/workflows/build.yml"
+      - "overlay/**"
+      - "patches/**"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout this repo (patches / overlay)
+      - name: Checkout this repo
         uses: actions/checkout@v4
 
       - name: Get nabgcc sources
@@ -16,10 +23,10 @@ jobs:
 
       - name: Apply overlay (corrected source files)
         run: |
-          if [ -d overlay ] && [ -n "$(ls -A overlay)" ]; then
+          if [ -d overlay ] && [ -n "$(ls -A overlay 2>/dev/null)" ]; then
             cp -rv overlay/* nabgcc/
           else
-            echo "no overlay yet - vanilla build"
+            echo "no overlay - vanilla build"
           fi
 
       - name: Install ARM toolchain
@@ -30,16 +37,14 @@ jobs:
       - name: Build
         run: |
           cd nabgcc
-          make 2>&1 | tee build.log
-          echo "exit: $?"
-          ls -la obj/ || true
+          (make 2>&1 || true) | tee build.log
 
       - name: Collect outputs
         if: always()
         run: |
           mkdir -p out
           cp nabgcc/build.log out/ 2>/dev/null || true
-          find nabgcc/obj -type f -exec cp {} out/ ; 2>/dev/null || true
+          find nabgcc/obj -type f -exec cp {} out/ \; 2>/dev/null || true
 
       - name: Upload artifacts
         if: always()
@@ -48,3 +53,14 @@ jobs:
           name: firmware-build
           path: out/
           if-no-files-found: warn
+
+      - name: Commit build log back to repo
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p logs
+          cp nabgcc/build.log logs/build.log 2>/dev/null || echo "build failed before log" > logs/build.log
+          git add logs
+          git commit -m "build log [skip ci]" || echo "nothing to commit"
+          git push
